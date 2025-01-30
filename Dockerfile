@@ -4,5 +4,10 @@ WORKDIR /app
 
 COPY . .
 
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m venv venv
+
+RUN venv/bin/pip install --upgrade pip
+
+RUN venv/bin/pip install --no-cache-dir -r requirements.txt
+
+ENV PATH="/app/venv/bin:$PATH"
