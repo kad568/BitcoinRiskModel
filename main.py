@@ -1,10 +1,10 @@
 import onchain_data
 import pandas as pd
 from sqlalchemy import create_engine
-import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, cross_val_score, TimeSeriesSplit
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
 
 
 DB_FILE_NAME = "btc_onchain.db"
@@ -82,6 +82,7 @@ def data_exploration_plot_check():
 
 def btc_risk_model():
 
+    # Load and preprocess the data
     sth_percent_supply_profit_df = percent_supply_profit_data_processing()
 
     # Drop non-numeric columns
@@ -109,17 +110,25 @@ def btc_risk_model():
         model = RandomForestClassifier(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
 
-        # Evaluate the model
+        # Evaluate the model on the test set
         y_pred = model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
-        
         print(f"Accuracy for {target}: {accuracy:.4f}")
+
+        # Cross-validation to check for overfitting
+        cv = TimeSeriesSplit(n_splits=5)
+        cv_scores = cross_val_score(model, X, y, cv=cv)
+        print(f"Cross-Validation Accuracy for {target}: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
 
         # Store the model for later use
         models[target] = model
 
-        print(model.feature_importances_)
+        # Print the model feature importances (can be used for further analysis)
+        print(f"Feature importances for {target}: {model.feature_importances_}")
         print("\n")
+    
+    return models
+
 
 btc_risk_model()
 
