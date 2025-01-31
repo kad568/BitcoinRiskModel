@@ -81,8 +81,46 @@ def data_exploration_plot_check():
     plt.show()
 
 def btc_risk_model():
-    ...
 
-data_exploration_plot_check()
+    sth_percent_supply_profit_df = percent_supply_profit_data_processing()
+
+    # Drop non-numeric columns
+    sth_percent_supply_profit_df = sth_percent_supply_profit_df.drop(columns=["date"], errors="ignore")
+
+    # Features: Use all rolling averages and raw values
+    feature_columns = [col for col in sth_percent_supply_profit_df.columns if "STH 7D MA" in col]
+
+    # Targets: Future price movements (binary classification)
+    target_columns = ["7D_greater", "30D_greater", "90D_greater", "365D_greater"]
+
+    models = {}
+    for target in target_columns:
+        # Drop rows with NaN values (usually first N rows due to rolling averages)
+        df_cleaned = sth_percent_supply_profit_df.dropna()
+
+        # Define features (X) and labels (y)
+        X = df_cleaned[feature_columns]
+        y = df_cleaned[target]
+
+        # Split data into training and test sets (80% train, 20% test)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # Initialize and train the model
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+
+        # Evaluate the model
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        print(f"Accuracy for {target}: {accuracy:.4f}")
+
+        # Store the model for later use
+        models[target] = model
+
+        print(model.feature_importances_)
+        print("\n")
+
+btc_risk_model()
 
 
