@@ -257,8 +257,8 @@ from sqlalchemy import create_engine
 df = percent_supply_profit_data_processing()
 
 # Define feature and target columns
-feature_columns = ["STH 7D MA", "STH 7D MA 30D MA", "STH 7D MA 90D MA", "STH 7D MA 365D MA"]
-target_columns = ["7D_greater", "30D_greater", "90D_greater", "365D_greater"]
+feature_columns = ["STH 7D MA", "STH 7D MA 30D MA", "STH 7D MA 90D MA"]
+target_columns = ["7D_greater", "30D_greater", "90D_greater",]
 
 results = {}
 
