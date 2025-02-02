@@ -155,94 +155,204 @@ def data_exploration_plot_check():
     
     return models
 
+
 import numpy as np
+import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, learning_curve
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc, precision_recall_curve
+from sklearn.model_selection import train_test_split, learning_curve, TimeSeriesSplit
+from sklearn.metrics import (
+    accuracy_score, confusion_matrix, roc_curve, auc, precision_recall_curve, classification_report
+)
 from sklearn.inspection import permutation_importance
+from imblearn.over_sampling import SMOTE
 import os
+from datetime import datetime
 
 # Fix Matplotlib backend error
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 
-# Create a folder to save plots
+# Create folders for logs and plots
 os.makedirs("plots", exist_ok=True)
+os.makedirs("logs", exist_ok=True)
+
+# Log file setup
+log_file = "logs/model_log.txt"
+def log_message(message):
+    """
+    Logs messages to both a file and the console.
+
+    Parameters:
+        message (str): The message to log.
+    """
+    with open(log_file, "a", encoding="utf-8") as log:  # Use UTF-8 encoding
+        log.write(f"{datetime.now()} - {message}\n")
+    print(message)  # Still prints to console for convenience
+
 
 def rolling_window_validation(X, y, model, initial_train_size=0.5, step=0.1):
-    """Rolling-window validation where the training set expands over time."""
+    """Rolling-window validation."""
     n = len(X)
     train_size = int(n * initial_train_size)
     step_size = int(n * step)
-    
     scores = []
-    
+
     for start in range(0, n - train_size, step_size):
         end = start + train_size
         if end >= n:
-            break  # Stop if we reach the end
-        
-        X_train, X_test = X.iloc[:end], X.iloc[end:end+step_size]
-        y_train, y_test = y.iloc[:end], y.iloc[end:end+step_size]
-        
+            break
+        X_train, X_test = X.iloc[:end], X.iloc[end:end + step_size]
+        y_train, y_test = y.iloc[:end], y.iloc[end:end + step_size]
+
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
-        
         acc = accuracy_score(y_test, y_pred)
         scores.append(acc)
-    
+        
+
     return np.mean(scores), np.std(scores)
 
-def btc_risk_model():
+
+def plot_roc_curve(y_test, y_prob, target, save_path):
+    """Plots ROC curve with a dotted diagonal line."""
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, label=f"ROC (AUC={auc(fpr, tpr):.2f})", color="blue")
+    plt.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Random Classifier")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title(f"ROC Curve for {target}")
+    plt.legend()
+    plt.grid()
+    plt.savefig(save_path)
+    log_message(f"📂 Saved {save_path}")
+    plt.close()
+
+
+def plot_precision_recall_curve(y_test, y_prob, target, save_path):
+    """Plots Precision-Recall curve."""
+    precision, recall, _ = precision_recall_curve(y_test, y_prob)
+    plt.figure(figsize=(8, 6))
+    plt.plot(recall, precision, label="Precision-Recall", color="blue")
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title(f"Precision-Recall Curve for {target}")
+    plt.legend()
+    plt.grid()
+    plt.savefig(save_path)
+    log_message(f"📂 Saved {save_path}")
+    plt.close()
+
+
+def plot_confusion_matrix(cm, target, save_path):
+    """Plots confusion matrix."""
+    plt.figure(figsize=(6, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False)
+    plt.title(f"Confusion Matrix for {target}")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.savefig(save_path)
+    log_message(f"📂 Saved {save_path}")
+    plt.close()
+
+
+def plot_learning_curve(model, X, y, rolling_mean, rolling_std, target, save_path):
+    """Plots learning curve with rolling mean and std."""
+    train_sizes, train_scores, val_scores = learning_curve(
+        model, X, y, train_sizes=np.linspace(0.1, 1.0, 10), cv=5, scoring="accuracy", n_jobs=-1
+    )
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    val_mean = np.mean(val_scores, axis=1)
+    val_std = np.std(val_scores, axis=1)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(train_sizes, train_mean, label="Training Accuracy", color="red")
+    plt.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, color="red", alpha=0.2)
+    plt.plot(train_sizes, val_mean, label="Validation Accuracy", color="green")
+    plt.fill_between(train_sizes, val_mean - val_std, val_mean + val_std, color="green", alpha=0.2)
+
+    # Add rolling mean and std
+    plt.axhline(rolling_mean, color="blue", linestyle="--", label="Rolling-Window Mean")
+    plt.fill_between(
+        train_sizes, rolling_mean - rolling_std, rolling_mean + rolling_std, color="blue", alpha=0.1, label="Rolling-Window Std"
+    )
+
+    plt.title(f"Learning Curve for {target}")
+    plt.xlabel("Training Set Size")
+    plt.ylabel("Accuracy")
+    plt.legend()
+    plt.grid()
+    plt.savefig(save_path)
+    log_message(f"📂 Saved {save_path}")
+    plt.close()
+
+
+def plot_permutation_importance(model, X, y, target, save_path):
+    """Plots permutation importance."""
+    perm_importance = permutation_importance(model, X, y, n_repeats=10, random_state=42)
+    sorted_idx = perm_importance.importances_mean.argsort()
+
+    plt.figure(figsize=(8, 6))
+    plt.barh(X.columns[sorted_idx], perm_importance.importances_mean[sorted_idx], color="purple")
+    plt.xlabel("Permutation Importance")
+    plt.title(f"Feature Importance for {target}")
+    plt.savefig(save_path)
+    log_message(f"📂 Saved {save_path}")
+    plt.close()
+
+
+def btc_risk_model(use_smote=True, features=None, timeframes=None):
+    """
+    Train and evaluate a Bitcoin risk model with flexible features, targets, and options.
+    
+    Parameters:
+        use_smote (bool): Whether to apply SMOTE for oversampling.
+        features (list): List of features to use. Defaults to all available.
+        timeframes (list): List of timeframes to assess. Defaults to ["7D_greater", "30D_greater", "90D_greater", "365D_greater"].
+    """
+    log_message("\n--- Starting BTC Risk Model ---")
+
     # Load and preprocess the data
     sth_percent_supply_profit_df = percent_supply_profit_data_processing()
-    
+
     # Drop non-numeric columns
     sth_percent_supply_profit_df = sth_percent_supply_profit_df.drop(columns=["date"], errors="ignore")
-    
-    # Features
-    feature_columns = [col for col in sth_percent_supply_profit_df.columns if "STH 7D MA" in col]
-    target_columns = ["7D_greater", "30D_greater", "90D_greater", "365D_greater"]
-    
+
+    # Default features and timeframes
+    if features is None:
+        features = [col for col in sth_percent_supply_profit_df.columns if "STH" in col]
+    if timeframes is None:
+        timeframes = ["7D_greater", "30D_greater", "90D_greater", "365D_greater"]
+
     models = {}
 
-    # Reduce global font size
-    plt.rcParams.update({'font.size': 8})
+    for target in timeframes:
+        log_message(f"\n🔹 Training for Target: {target}")
 
-    # Create separate figures for each metric in a **2×2 grid**
-    fig_learning, axes_learning = plt.subplots(2, 2, figsize=(10, 8))
-    fig_conf_matrix, axes_conf_matrix = plt.subplots(2, 2, figsize=(10, 8))
-    fig_roc, axes_roc = plt.subplots(2, 2, figsize=(10, 8))
-    fig_pr, axes_pr = plt.subplots(2, 2, figsize=(10, 8))
-    fig_perm_importance, axes_perm_importance = plt.subplots(2, 2, figsize=(10, 8))
-
-    # Flatten axes for easy indexing
-    axes_learning = axes_learning.flatten()
-    axes_conf_matrix = axes_conf_matrix.flatten()
-    axes_roc = axes_roc.flatten()
-    axes_pr = axes_pr.flatten()
-    axes_perm_importance = axes_perm_importance.flatten()
-
-    for i, target in enumerate(target_columns):
+        # Clean and split data
         df_cleaned = sth_percent_supply_profit_df.dropna()
-        X = df_cleaned[feature_columns]
+        X = df_cleaned[features]
         y = df_cleaned[target]
 
-        # Train-test split
-        split_idx = int(len(X) * 0.8)
-        X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-        y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Model initialization
-        model = RandomForestClassifier(    
-            n_estimators=50,
-            max_depth=3,
-            min_samples_split=20,
-            max_features="sqrt",
-            class_weight="balanced",  # Automatically balances class weights
-            random_state=42
+        # Apply SMOTE if enabled
+        if use_smote:
+            smote = SMOTE(random_state=42)
+            X_train, y_train = smote.fit_resample(X_train, y_train)
+            log_message("✅ Applied SMOTE")
+
+        # Initialize model
+        model = RandomForestClassifier(
+            n_estimators=50,         # Reduced number of trees for efficiency
+            max_depth=3,             # Limit tree depth to avoid overfitting
+            min_samples_split=20,    # Larger splits to improve generalization
+            max_features="sqrt",     # Reduced features per split
+            class_weight="balanced", # Balance class weights to address class imbalance
+            random_state=42,
         )
 
         model.fit(X_train, y_train)
@@ -250,73 +360,38 @@ def btc_risk_model():
         # Evaluate on test set
         y_pred = model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
-        print(f"\n🔹 Accuracy for {target}: {accuracy:.4f}")
+        conf_matrix = confusion_matrix(y_test, y_pred)
+        log_message(f"Accuracy for {target}: {accuracy:.4f}")
 
-        # **Rolling-Window Validation**
-        mean_acc, std_acc = rolling_window_validation(X, y, model)
-        print(f"📊 Rolling-Window Accuracy for {target}: {mean_acc:.4f} ± {std_acc:.4f}")
+        # Rolling-window validation
+        rolling_mean, rolling_std = rolling_window_validation(X, y, model)
 
-        # Store model
+        log_message(f"📊 Final Rolling-Window Accuracy for {target}: {rolling_mean:.4f} ± {rolling_std:.4f}")
+
+        log_message(f"Confusion Matrix for {target}:\n{conf_matrix}")
+        log_message(f"Classification Report for {target}:\n{classification_report(y_test, y_pred)}")
+
+        # Generate and save plots
+        plot_confusion_matrix(conf_matrix, target, f"plots/{target}_conf_matrix.png")
+        plot_learning_curve(model, X, y, rolling_mean, rolling_std, target, f"plots/{target}_learning_curve.png")
+        plot_permutation_importance(model, X_test, y_test, target, f"plots/{target}_perm_importance.png")
+        y_prob = model.predict_proba(X_test)[:, 1]
+        plot_roc_curve(y_test, y_prob, target, f"plots/{target}_roc_curve.png")
+        plot_precision_recall_curve(y_test, y_prob, target, f"plots/{target}_pr_curve.png")
+
+        # Store the model
         models[target] = model
 
-        # **Feature Importance**
-        importance = model.feature_importances_
-        print(f"🛠 Feature Importances for {target}: {importance}\n")
-
-        # **Learning Curve with Standard Deviation**
-        train_sizes, train_scores, test_scores = learning_curve(
-            model, X, y, cv=5, scoring="accuracy", n_jobs=-1, train_sizes=np.linspace(0.1, 1.0, 10)
-        )
-
-        train_mean = np.mean(train_scores, axis=1)
-        train_std = np.std(train_scores, axis=1)
-        test_mean = np.mean(test_scores, axis=1)
-        test_std = np.std(test_scores, axis=1)
-
-        axes_learning[i].plot(train_sizes, train_mean, 'o-', color="r", label="Train")
-        axes_learning[i].fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.1, color="r")
-        axes_learning[i].plot(train_sizes, test_mean, 'o-', color="g", label="Validation")
-        axes_learning[i].fill_between(train_sizes, test_mean - test_std, test_mean + test_std, alpha=0.1, color="g")
-        axes_learning[i].set_title(f"Learning Curve: {target}")
-        axes_learning[i].legend()
-
-        # **Confusion Matrix**
-        conf_matrix = confusion_matrix(y_test, y_pred)
-        sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", ax=axes_conf_matrix[i])
-        axes_conf_matrix[i].set_title(f"Confusion Matrix: {target}")
-
-        # **ROC Curve**
-        y_prob = model.predict_proba(X_test)[:, 1]
-        fpr, tpr, _ = roc_curve(y_test, y_prob)
-        roc_auc = auc(fpr, tpr)
-        axes_roc[i].plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}", color='blue')
-        axes_roc[i].plot([0, 1], [0, 1], linestyle='--', color='gray')
-        axes_roc[i].set_title(f"ROC Curve: {target}")
-
-        # **Precision-Recall Curve**
-        precision, recall, _ = precision_recall_curve(y_test, y_prob)
-        axes_pr[i].plot(recall, precision, marker='.', color="b")
-        axes_pr[i].set_title(f"Precision-Recall: {target}")
-
-        # **Permutation Importance**
-        result = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42)
-        sorted_idx = result.importances_mean.argsort()
-        axes_perm_importance[i].barh(np.array(feature_columns)[sorted_idx], result.importances_mean[sorted_idx], color='purple')
-        axes_perm_importance[i].set_title(f"Permutation Importance: {target}")
-
-    # Save and display plots
-    for fig, name in zip([fig_learning, fig_conf_matrix, fig_roc, fig_pr, fig_perm_importance],
-                         ["learning_curve", "conf_matrix", "roc_curve", "pr_curve", "perm_importance"]):
-        fig.tight_layout(pad=2.0, h_pad=0.8, w_pad=0.8)
-        fig.savefig(f"plots/{name}.png")  # Save plot
-        print(f"📂 Saved {name}.png in 'plots' folder")
-
-    plt.show()
-
+    log_message("\n--- Model Complete ---")
     return models
 
 
+# Example of calling the revamped function
+btc_risk_model(
+    use_smote=False,  # Enable SMOTE
+    features=["STH 7D MA", "STH 7D MA 30D MA", "STH 7D MA 90D MA", "STH 7D MA 365D MA"],
+    timeframes=["7D_greater"]
+)
 
-btc_risk_model()
 
 
