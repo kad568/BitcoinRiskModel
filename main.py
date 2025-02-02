@@ -303,6 +303,15 @@ def plot_permutation_importance(model, X, y, target, save_path):
     log_message(f"📂 Saved {save_path}")
     plt.close()
 
+def perform_time_series_split(X, y, model, n_splits=5):
+    """Perform time-series split cross-validation."""
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    scores = cross_val_score(model, X, y, cv=tscv, scoring='accuracy')
+    mean_score = np.mean(scores)
+    std_score = np.std(scores)
+    log_message(f"⏳ Time-Series Split Accuracy: {mean_score:.4f} ± {std_score:.4f}")
+    return mean_score, std_score
+
 
 def btc_risk_model(use_smote=True, features=None, timeframes=None):
     """
@@ -361,13 +370,14 @@ def btc_risk_model(use_smote=True, features=None, timeframes=None):
         y_pred = model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
         conf_matrix = confusion_matrix(y_test, y_pred)
-        log_message(f"Accuracy for {target}: {accuracy:.4f}")
+
+        ts_mean, ts_std = perform_time_series_split(X, y, model)
 
         # Rolling-window validation
         rolling_mean, rolling_std = rolling_window_validation(X, y, model)
 
         log_message(f"📊 Final Rolling-Window Accuracy for {target}: {rolling_mean:.4f} ± {rolling_std:.4f}")
-
+        log_message(f"Fixed Test Accuracy for {target}: {accuracy:.4f}")
         log_message(f"Confusion Matrix for {target}:\n{conf_matrix}")
         log_message(f"Classification Report for {target}:\n{classification_report(y_test, y_pred)}")
 
@@ -388,10 +398,7 @@ def btc_risk_model(use_smote=True, features=None, timeframes=None):
 
 # Example of calling the revamped function
 btc_risk_model(
-    use_smote=False,  # Enable SMOTE
-    features=["STH 7D MA", "STH 7D MA 30D MA", "STH 7D MA 90D MA", "STH 7D MA 365D MA"],
+    use_smote=True,  # Enable SMOTE
+    features=["STH 7D MA", "STH 7D MA 30D MA", "STH 7D MA 90D MA"],
     timeframes=["7D_greater"]
 )
-
-
-
